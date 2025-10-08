@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+// ---- Data ----------------------------------------------------
 const VERSES = [
   {
     ref: "1 Peter 5:7",
@@ -27,38 +28,188 @@ const VERSES = [
   },
 ];
 
-function getVerseIndexForDate(d = new Date()) {
-  const seed = d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+// deterministic daily index
+function indexForDate(d = new Date()) {
+  const seed =
+    d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
   return seed % VERSES.length;
 }
 
+// quick “1-minute prayer” generator that changes daily
+function dailySeed(d = new Date()) {
+  return (
+    (d.getUTCFullYear() * 10000 +
+      (d.getUTCMonth() + 1) * 100 +
+      d.getUTCDate()) %
+    9973
+  );
+}
+
+const PRAYER_TEMPLATES = [
+  ({ v }) =>
+    `Father, thank You for Your word in ${v.ref}. ${v.meaning} Teach my heart to trust You today. Guide my thoughts, steady my steps, and help me obey what You show me. In Jesus’ name, amen.`,
+  ({ v }) =>
+    `Lord Jesus, I receive the truth of ${v.ref}. ${v.meaning} I surrender my plans and ask for Your wisdom. Lead me in Your will and fill me with peace as I walk with You. Amen.`,
+  ({ v }) =>
+    `Holy Spirit, through ${v.ref} You remind me what is true. ${v.meaning} Quiet my fears, align my desires with Yours, and give me courage to act in faith today. In Jesus’ name, amen.`,
+  ({ v }) =>
+    `God, thank You for speaking through ${v.ref}. ${v.meaning} Help me rely on You instead of my own understanding. Order my steps and make my path straight. Amen.`,
+  ({ v }) =>
+    `Father, Your word in ${v.ref} is life. ${v.meaning} I place this day in Your hands—guide my decisions, guard my heart, and use me for Your purpose. In Christ’s name, amen.`,
+];
+
+function buildPrayerOfTheDay(v, d = new Date()) {
+  const idx = dailySeed(d) % PRAYER_TEMPLATES.length;
+  return PRAYER_TEMPLATES[idx]({ v });
+}
+
 export default function App() {
-  const verse = useMemo(() => VERSES[getVerseIndexForDate(new Date())], []);
-  const [theme, setTheme] = useState("light");
+  // load theme & last verse from localStorage
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("theme") || "dark"
+  );
+  const [i, setI] = useState(() => {
+    const saved = localStorage.getItem("verseIndex");
+    return saved ? Number(saved) : indexForDate(new Date());
+  });
+
+  const verse = useMemo(() => VERSES[i], [i]);
+  const prayer = useMemo(
+    () => buildPrayerOfTheDay(verse, new Date()),
+    [verse]
+  );
 
   useEffect(() => {
-    document.body.style.background = theme === "dark" ? "#0f172a" : "#f8fafc";
+    document.body.style.background =
+      theme === "dark" ? "#0f172a" : "#f8fafc";
     document.body.style.color = theme === "dark" ? "#f8fafc" : "#0f172a";
+    localStorage.setItem("theme", theme);
   }, [theme]);
 
-  return (
-    <div style={{ maxWidth: 600, margin: "40px auto", padding: "20px" }}>
-      <h1 style={{ fontSize: "1.8rem", fontWeight: "bold" }}>📖 Daily Bible Verse</h1>
-      <button onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-        style={{ marginTop: 10, padding: "6px 12px", borderRadius: 8 }}>
-        {theme === "light" ? "🌙 Dark Mode" : "☀️ Light Mode"}
-      </button>
+  useEffect(() => localStorage.setItem("verseIndex", String(i)), [i]);
 
-      <div style={{ marginTop: 30, padding: 20, borderRadius: 15, background: theme === "light" ? "#fff" : "#1e293b", boxShadow: "0 4px 8px rgba(0,0,0,0.1)" }}>
-        <p style={{ fontWeight: "bold", fontSize: "1.2rem" }}>{verse.ref}</p>
-        <p style={{ fontSize: "1.1rem", marginBottom: 15 }}>“{verse.text}”</p>
-        <p><strong>Simple meaning:</strong> {verse.meaning}</p>
-        <p><strong>How to apply it today:</strong> {verse.apply}</p>
+  const shuffle = () => setI(Math.floor(Math.random() * VERSES.length));
+
+  const share = async () => {
+    const msg = `📖 ${verse.ref}\n“${verse.text}”\n\n💡 Reflection: ${verse.meaning}\n\n✨ Application: ${verse.apply}\n\n🙏 1-Minute Prayer:\n${prayer}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: verse.ref, text: msg });
+      } catch {}
+    } else {
+      await navigator.clipboard.writeText(msg);
+      alert("Copied to clipboard — paste anywhere to share!");
+    }
+  };
+
+  const requestNotif = async () => {
+    if (!("Notification" in window))
+      return alert("Notifications not supported on this device.");
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return;
+    localStorage.setItem("notifEnabled", "1");
+    alert(
+      "Notifications enabled. For exact 8am alerts, use the Push setup (we’ll add it next)."
+    );
+  };
+
+  return (
+    <div style={{ maxWidth: 700, margin: "32px auto", padding: "20px" }}>
+      <h1 style={{ fontSize: 32, fontWeight: 800 }}>📖 Daily Bible Verse</h1>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          marginTop: 10,
+        }}
+      >
+        <button
+          onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          style={btn}
+        >
+          {theme === "light" ? "🌙 Dark Mode" : "☀️ Light Mode"}
+        </button>
+        <button onClick={shuffle} style={btn}>
+          🔀 Shuffle Verse
+        </button>
+        <button onClick={share} style={btn}>
+          📤 Share
+        </button>
+        <button onClick={requestNotif} style={btn}>
+          🔔 Enable Notifications
+        </button>
       </div>
 
-      <footer style={{ marginTop: 30, fontSize: "0.8rem", textAlign: "center", opacity: 0.7 }}>
+      {/* Devotional Layout */}
+      <div style={card(theme)}>
+        <p
+          style={{
+            fontSize: 18,
+            opacity: 0.8,
+            marginBottom: 8,
+          }}
+        >
+          God wants you to know…
+        </p>
+        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+          {verse.ref}
+        </h2>
+        <p style={{ fontSize: 18, marginBottom: 16 }}>“{verse.text}”</p>
+
+        <hr style={{ opacity: 0.2, margin: "12px 0" }} />
+
+        <h3 style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
+          💡 Reflection
+        </h3>
+        <p style={{ lineHeight: 1.6, marginBottom: 16 }}>{verse.meaning}</p>
+
+        <h3 style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
+          ✨ How you can apply it today
+        </h3>
+        <p style={{ lineHeight: 1.6 }}>{verse.apply}</p>
+      </div>
+
+      <div style={card(theme)}>
+        <p
+          style={{
+            fontWeight: 700,
+            fontSize: 18,
+            marginBottom: 6,
+          }}
+        >
+          🙏 1-Minute Prayer
+        </p>
+        <p style={{ lineHeight: 1.6 }}>{prayer}</p>
+      </div>
+
+      <footer
+        style={{
+          marginTop: 24,
+          fontSize: 12,
+          textAlign: "center",
+          opacity: 0.7,
+        }}
+      >
         Built by Henry ✝️
       </footer>
     </div>
   );
 }
+
+const btn = {
+  padding: "8px 12px",
+  borderRadius: 10,
+  border: "1px solid #334155",
+  background: "transparent",
+  cursor: "pointer",
+};
+
+const card = (theme) => ({
+  marginTop: 18,
+  padding: 20,
+  borderRadius: 16,
+  background: theme === "light" ? "#ffffff" : "#1e293b",
+  boxShadow: "0 6px 18px rgba(0,0,0,.12)",
+});
