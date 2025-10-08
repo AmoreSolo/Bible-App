@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useRegisterSW } from "virtual:pwa-register/react"; // <- update banner hook
 
 // ---- Data ----------------------------------------------------
 const VERSES = [
@@ -6,24 +7,33 @@ const VERSES = [
     ref: "1 Peter 5:7",
     text: "Cast all your anxiety on Him because He cares for you.",
     meaning: "God invites you to hand over your worries—He cares and will help.",
-    apply: "Name one worry, pray: 'God, I give this to You,' then take one small step you can control.",
+    apply:
+      "Name one worry, pray: 'God, I give this to You,' then take one small step you can control.",
   },
   {
     ref: "Philippians 4:6-7",
-    text: "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.",
-    meaning: "Trade panic for prayer and gratitude; God's peace guards your heart and mind.",
-    apply: "List 3 things you’re thankful for, and one request. Hand it to God today.",
+    text:
+      "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.",
+    meaning:
+      "Trade panic for prayer and gratitude; God's peace guards your heart and mind.",
+    apply:
+      "List 3 things you’re thankful for, and one request. Hand it to God today.",
   },
   {
     ref: "Isaiah 41:10",
-    text: "Do not fear, for I am with you; do not be dismayed, for I am your God.",
-    meaning: "You’re not alone—God’s presence gives strength and peace.",
-    apply: "When stress rises, whisper: 'You are with me.' Then take the next small right step.",
+    text:
+      "Do not fear, for I am with you; do not be dismayed, for I am your God.",
+    meaning:
+      "You’re not alone—God’s presence gives strength and peace.",
+    apply:
+      "When stress rises, whisper: 'You are with me.' Then take the next small right step.",
   },
   {
     ref: "Proverbs 3:5-6",
-    text: "Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to Him, and He will make your paths straight.",
-    meaning: "Even when things don’t make sense, trust that God’s leading you right.",
+    text:
+      "Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to Him, and He will make your paths straight.",
+    meaning:
+      "Even when things don’t make sense, trust that God’s leading you right.",
     apply: "Before a decision, pause and say: 'God, guide me.'",
   },
 ];
@@ -39,13 +49,15 @@ function nextEightAM(from = new Date()) {
   const t = new Date(from);
   t.setSeconds(0, 0);
   t.setHours(8, 0, 0, 0); // 8:00 AM local
-  if (t <= from) t.setDate(t.getDate() + 1); // if already past 8:00 AM today, schedule tomorrow
+  if (t <= from) t.setDate(t.getDate() + 1);
   return t;
 }
 
 // rotating “1-Minute Prayer” (changes wording daily)
 function dailySeed(d = new Date()) {
-  return (d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()) % 9973;
+  return (
+    (d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()) % 9973
+  );
 }
 const PRAYER_TEMPLATES = [
   ({ v }) =>
@@ -66,10 +78,21 @@ function buildPrayerOfTheDay(v, d = new Date()) {
 
 // ---- App -----------------------------------------------------
 export default function App() {
+  // PWA update banner wiring
+  const { needRefresh, offlineReady, updateServiceWorker } = useRegisterSW();
+  const [showUpdate, setShowUpdate] = useState(false);
+  const [showOffline, setShowOffline] = useState(false);
+
+  useEffect(() => {
+    if (needRefresh) setShowUpdate(true);
+  }, [needRefresh]);
+  useEffect(() => {
+    if (offlineReady) setShowOffline(true);
+  }, [offlineReady]);
+
   // theme + verse index persisted
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
   const [i, setI] = useState(() => {
-    // prefer index computed from today; fall back to saved manual shuffle
     const saved = localStorage.getItem("verseIndex");
     return saved ? Number(saved) : indexForDate(new Date());
   });
@@ -89,27 +112,21 @@ export default function App() {
     localStorage.setItem("verseIndex", String(i));
   }, [i]);
 
-  // --- NEW: auto-refresh every new day + at 8:00 AM local ----
+  // auto-refresh verse daily + 8am reminder (local gentle notification)
   useEffect(() => {
-    // On mount, ensure the verse matches today's computed index
     setI(indexForDate(new Date()));
 
-    // 1) Midnight/day-change watcher (checks every minute)
     const minuteTick = setInterval(() => {
       const should = indexForDate(new Date());
       setI(prev => (prev === should ? prev : should));
     }, 60 * 1000);
 
-    // 2) Schedule a switch/refresh at next local 8:00 AM
     const schedule8am = () => {
       const now = new Date();
       const target = nextEightAM(now);
       const delay = target.getTime() - now.getTime();
       const to = setTimeout(() => {
-        // set the new daily verse
         setI(indexForDate(new Date()));
-
-        // gentle local notification if the app has permission & user enabled it
         if (localStorage.getItem("notifEnabled") === "1" && "Notification" in window) {
           if (Notification.permission === "granted") {
             new Notification("Daily Bible Verse", {
@@ -117,7 +134,6 @@ export default function App() {
             });
           }
         }
-        // immediately schedule the next 8am
         schedule8am();
       }, delay);
       return to;
@@ -189,6 +205,33 @@ export default function App() {
         <p style={{ lineHeight: 1.6 }}>{prayer}</p>
       </div>
 
+      {/* Update banner (shows when a new version is available) */}
+      {showUpdate && (
+        <div style={banner(theme)}>
+          <span style={{ fontWeight: 600 }}>Update available</span>
+          <span style={{ opacity: 0.8 }}> — A new version is ready.</span>
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+            <button style={bannerBtn} onClick={() => setShowUpdate(false)}>Later</button>
+            <button
+              style={bannerBtnPrimary}
+              onClick={() => updateServiceWorker(true).then(() => setShowUpdate(false))}
+            >
+              Update
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Offline-ready banner (first install) */}
+      {showOffline && (
+        <div style={banner(theme)}>
+          <span style={{ fontWeight: 600 }}>Ready to work offline</span>
+          <div style={{ marginLeft: "auto" }}>
+            <button style={bannerBtn} onClick={() => setShowOffline(false)}>Got it</button>
+          </div>
+        </div>
+      )}
+
       <footer style={{ marginTop: 24, fontSize: 12, textAlign: "center", opacity: 0.7 }}>
         Built by Henry ✝️
       </footer>
@@ -196,6 +239,7 @@ export default function App() {
   );
 }
 
+// ---- Styles --------------------------------------------------
 const btn = {
   padding: "8px 12px",
   borderRadius: 10,
@@ -211,3 +255,36 @@ const card = (theme) => ({
   background: theme === "light" ? "#ffffff" : "#1e293b",
   boxShadow: "0 6px 18px rgba(0,0,0,.12)",
 });
+
+const banner = (theme) => ({
+  position: "fixed",
+  left: 16,
+  right: 16,
+  bottom: 16,
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "10px 12px",
+  borderRadius: 12,
+  background: theme === "light" ? "#e2e8f0" : "#0b1220",
+  color: theme === "light" ? "#0f172a" : "#e5e7eb",
+  border: "1px solid rgba(148,163,184,.35)",
+  boxShadow: "0 8px 24px rgba(0,0,0,.28)",
+});
+
+const bannerBtn = {
+  padding: "6px 10px",
+  borderRadius: 8,
+  border: "1px solid #475569",
+  background: "transparent",
+  cursor: "pointer",
+};
+
+const bannerBtnPrimary = {
+  padding: "6px 10px",
+  borderRadius: 8,
+  border: "none",
+  background: "#2563eb",
+  color: "white",
+  cursor: "pointer",
+};
